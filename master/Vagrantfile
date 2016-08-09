@@ -1,0 +1,32 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure(2) do |config|
+  config.vm.box = "geerlingguy/ubuntu1604"
+
+  config.vm.network "private_network", ip: "192.168.33.100"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = "2048"
+    vb.name = "postgres-master"
+  end
+
+  config.vm.provision "shell", inline: <<-SHELL
+    sudo apt-get update
+    sudo apt-get install postgresql -y
+    sudo pg_conftool 9.5 main set listen_addresses '*'
+    sudo pg_conftool 9.5 main set wal_level 'hot_standby'
+    sudo pg_conftool 9.5 main set archive_mode 'on'
+    sudo pg_conftool 9.5 main set archive_command 'cp -i %p /var/lib/postgresql/9.5/main/archive/%f'
+    sudo pg_conftool 9.5 main set max_wal_senders '3'
+    sudo pg_conftool 9.5 main set wal_keep_segments '8'
+    sudo mkdir -p /var/lib/postgresql/9.5/main/archive/
+    sudo chown postgres:postgres /var/lib/postgresql/9.5/main/archive/
+    # NEEDS BETTER SECURITY
+    sudo sed -i "92 i host    all             all             127.0.0.1/32            trust" /etc/postgresql/9.5/main/pg_hba.conf
+    sudo sed -i "93 i host    all             all             192.168.33.101/32            trust" /etc/postgresql/9.5/main/pg_hba.conf
+    sudo sed -i "101 i host   replication     postgres        192.168.33.101/32       trust" /etc/postgresql/9.5/main/pg_hba.conf
+    sudo service postgresql restart
+    sudo su postgres -c "createdb test"
+  SHELL
+end
