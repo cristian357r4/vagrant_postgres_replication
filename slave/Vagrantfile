@@ -1,0 +1,36 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure(2) do |config|
+  config.vm.box = "geerlingguy/ubuntu1604"
+
+  config.vm.network "private_network", ip: "192.168.33.101"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = "1024"
+    vb.name = "postgres-slave"
+  end
+
+  config.vm.provision "shell", inline: <<-SHELL
+    sudo apt-get update
+    sudo apt-get install postgresql -y
+    sudo pg_conftool 9.5 main set listen_addresses '*'
+    sudo pg_conftool 9.5 main set wal_level 'hot_standby'
+    sudo pg_conftool 9.5 main set max_wal_senders '3'
+    sudo pg_conftool 9.5 main set wal_keep_segments '8'
+    sudo pg_conftool 9.5 main set hot_standby 'on'
+    sudo pg_conftool 9.5 main set hot_standby_feedback 'on'
+    # NEEDS BETTER SECURITY
+    sudo sed -i "92 i host    all             all             127.0.0.1/32            trust" /etc/postgresql/9.5/main/pg_hba.conf
+    sudo service postgresql stop
+    sudo mv /var/lib/postgresql/9.5/main /var/lib/postgresql/9.5/main_original
+    sudo su postgres -c "pg_basebackup -h 192.168.33.100 -D /var/lib/postgresql/9.5/main -U postgres -v -P"
+    sudo touch /var/lib/postgresql/9.5/main/recovery.conf
+    sudo chown postgres:postgres /var/lib/postgresql/9.5/main/recovery.conf
+    sudo echo "standby_mode = 'on'" >> /var/lib/postgresql/9.5/main/recovery.conf
+    sudo echo "primary_conninfo = 'host=192.168.33.100 port=5432 user=postgres'" >> /var/lib/postgresql/9.5/main/recovery.conf
+    sudo echo "restore_command = 'cp //var/lib/postgresql/9.5/main/archive/%f %p'" >> /var/lib/postgresql/9.5/main/recovery.conf
+    sudo echo "trigger_file = '/tmp/postgresql.trigger.5432'" >> /var/lib/postgresql/9.5/main/recovery.conf
+    sudo service postgresql start
+  SHELL
+end
